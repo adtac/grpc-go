@@ -3,6 +3,7 @@ package profiling
 import (
 	"sync/atomic"
 	"sync"
+	"unsafe"
 )
 
 // A circular buffer can store up to size elements (the most recent size
@@ -16,7 +17,7 @@ type CircularBuffer struct {
 	size uint32
 	mask uint32
 	written uint32
-	arr []atomic.Value
+	arr []interface{}
 	draining sync.RWMutex
 }
 
@@ -32,7 +33,7 @@ func NewCircularBuffer(size uint32) *CircularBuffer {
 		size: size,
 		mask: size - 1,
 		written: 0,
-		arr: make([]atomic.Value, size),
+		arr: make([]interface{}, size),
 	}
 }
 
@@ -41,7 +42,7 @@ func (cb *CircularBuffer) Push(x interface{}) {
 	cb.draining.RLock()
 
 	cur := (atomic.AddUint32(&cb.written, 1) - 1) & cb.mask
-	cb.arr[cur].Store(x)
+	cb.arr[cur] = atomic.
 
 	// Do not defer RUnlock for better performance. Saves the cost of pushing and
 	// popping things on to and from the stack. On testing, deferring the unlock
@@ -54,25 +55,16 @@ func (cb *CircularBuffer) Push(x interface{}) {
 func (cb *CircularBuffer) Drain() []interface{} {
 	cb.draining.Lock()
 
-	var i, j uint32
 	var result []interface{}
 	if cb.written < cb.size {
 		result = make([]interface{}, cb.written)
-		for i = 0; i < cb.written; i++ {
-			result[j] = cb.arr[i].Load()
-			j++
-		}
+		copy(result, cb.arr)
 	} else {
 		result = make([]interface{}, cb.size)
 		cur := cb.written & cb.mask
-		for i = cur; i < cb.size; i++ {
-			result[j] = cb.arr[i].Load()
-			j++
-		}
-		for i = 0; i < cur; i++ {
-			result[j] = cb.arr[i].Load()
-			j++
-		}
+		diff := cb.size - cur
+		copy(result[:diff], cb.arr[cur:])
+		copy(result[diff:], cb.arr[:cur])
 	}
 
 	cb.written = 0

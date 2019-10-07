@@ -171,9 +171,8 @@ func BenchmarkCircularBuffer(b *testing.B) {
 		}
 
 		b.Run(fmt.Sprintf("size:%d", size), func(b *testing.B) {
-			var x uint64 = 1
 			for i = 0; i < uint32(b.N); i++ {
-				cb.Push(x)
+				cb.Push(i)
 			}
 		})
 	}
