@@ -173,14 +173,14 @@ func TestCircularBufferConcurrent(t *testing.T) {
 
 func BenchmarkCircularBuffer(b *testing.B) {
 	for size := 1 << 16; size <= 1 << 20; size <<= 1 {
-		for routines := 1; routines <= 1 << 8; routines <<= 2 {
-			cb := NewCircularBuffer(uint32(size))
-			if cb == nil {
-				b.Errorf("expected circular buffer to be allocated, got nil")
-				return
-			}
-
+		for routines := 1; routines <= 1 << 8; routines <<= 1 {
 			b.Run(fmt.Sprintf("routines:%d/size:%d", routines, size), func(b *testing.B) {
+				cb := NewCircularBuffer(uint32(size))
+				if cb == nil {
+					b.Errorf("expected circular buffer to be allocated, got nil")
+					return
+				}
+
 				perRoutine := b.N / routines
 				var wg sync.WaitGroup
 				for r := 0; r < routines; r++ {
