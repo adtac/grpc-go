@@ -4,6 +4,7 @@ import (
 	"testing"
 	"sync"
 	"fmt"
+	"time"
 )
 
 func TestCircularBufferSerial(t *testing.T) {
@@ -91,7 +92,7 @@ func TestCircularBufferConcurrent(t *testing.T) {
 		var size uint32
 		var result []interface{}
 
-		size = 1 << 16
+		size = 1 << 6
 		cb := NewCircularBuffer(size)
 		if cb == nil {
 			t.Errorf("expected circular buffer to be allocated, got nil")
@@ -101,14 +102,15 @@ func TestCircularBufferConcurrent(t *testing.T) {
 		type item struct {
 			R uint32
 			N uint32
+			T time.Time
 		}
 
 		var wg sync.WaitGroup
-		for r := uint32(0); r < 32; r++ {
+		for r := uint32(0); r < 1024; r++ {
 			wg.Add(1)
 			go func(r uint32) {
-				for n := uint32(0); n < size/4; n++ {
-					cb.Push(item{R: r, N: n})
+				for n := uint32(0); n < size; n++ {
+					cb.Push(item{R: r, N: n, T: time.Now()})
 				}
 				wg.Done()
 			}(r)
@@ -131,22 +133,36 @@ func TestCircularBufferConcurrent(t *testing.T) {
 			}
 		}
 
-		// Make sure the numbers for each goroutine are monotonically increasing and
-		// consecutive. If not, there is likely some data race/corruption.
+		// Make sure the numbers for each goroutine are monotonically increasing. A
+		// stronger requirement would be to enforce that they're consecutive, but
+		// if there's enough contention and wrapping around in the circular buffer,
+		// we cannot guarantee that the value wouldn't be overwritten by a later
+		// value (correctly so).
 		lastSeen := make(map[uint32]uint32)
+		lastSeenId := make(map[uint32]uint32)
 		for i := 0; i < len(result); i++ {
 			elem := result[i].(item)
 			if v, ok := lastSeen[elem.R]; ok {
 				if elem.N != v + 1 {
-					t.Errorf("tn = %d, R = %d: result[%d].N = %d != %d + 1", tn, elem.R, i, elem.N, v)
-					for k := i - 10; k < i + 10; k++ {
-						tx := result[k].(item)
-						t.Errorf("%d: %v", k, tx)
+					if elem.N <= v {
+						t.Errorf("tn = %d, R = %d: result[%d].N = %d <= %d + 1", tn, elem.R, i, elem.N, v)
+						t.Errorf("lastSeenId[%d] = %d", elem.R, lastSeenId[elem.R])
+						t.Errorf("diff = %v %v", (result[0].(item)).T, (result[len(result)-1].(item)).T)
+						for k := i - 10; k < i + 10; k++ {
+							if k >= 0 && k < len(result) {
+								tx := result[k].(item)
+								t.Errorf("%d: %v", k, tx)
+							}
+						}
+					} else {
+						t.Logf("tn = %d, R = %d: result[%d].N = %d > %d, but not consecutive", tn, elem.R, i, elem.N, v)
+						t.Logf("lastSeenId[%d] = %d", elem.R, lastSeenId[elem.R])
 					}
 					return
 				}
 			}
 			lastSeen[elem.R] = elem.N
+			lastSeenId[elem.R] = uint32(i)
 		}
 
 		// Wait for all goroutines to complete before moving on to other tests. If
@@ -156,24 +172,28 @@ func TestCircularBufferConcurrent(t *testing.T) {
 }
 
 func BenchmarkCircularBuffer(b *testing.B) {
-	var size, i uint32
-
-	for size = 1 << 10; size <= 1 << 16; size <<= 2 {
-		cb := NewCircularBuffer(size)
-		if cb == nil {
-			b.Errorf("expected circular buffer to be allocated, got nil")
-			return
-		}
-
-		type DummyStruct struct {
-			Int int
-			Str string
-		}
-
-		b.Run(fmt.Sprintf("size:%d", size), func(b *testing.B) {
-			for i = 0; i < uint32(b.N); i++ {
-				cb.Push(i)
+	for size := 1 << 16; size <= 1 << 20; size <<= 1 {
+		for routines := 1; routines <= 1 << 8; routines <<= 2 {
+			cb := NewCircularBuffer(uint32(size))
+			if cb == nil {
+				b.Errorf("expected circular buffer to be allocated, got nil")
+				return
 			}
-		})
+
+			b.Run(fmt.Sprintf("routines:%d/size:%d", routines, size), func(b *testing.B) {
+				perRoutine := b.N / routines
+				var wg sync.WaitGroup
+				for r := 0; r < routines; r++ {
+					wg.Add(1)
+					go func() {
+						for i := 0; i < perRoutine; i++ {
+							cb.Push(i)
+						}
+						wg.Done()
+					}()
+				}
+				wg.Wait()
+			})
+		}
 	}
 }
