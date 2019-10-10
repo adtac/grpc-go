@@ -1,9 +1,9 @@
 package profiling
 
 import (
-	"testing"
-	"sync"
 	"fmt"
+	"sync"
+	"testing"
 	"time"
 )
 
@@ -62,7 +62,7 @@ func TestCircularBufferOverflow(t *testing.T) {
 		return
 	}
 
-	for i = 0; i < size + size/2; i++ {
+	for i = 0; i < size+size/2; i++ {
 		cb.Push(i)
 	}
 
@@ -134,10 +134,10 @@ func TestCircularBufferConcurrent(t *testing.T) {
 func BenchmarkCircularBuffer(b *testing.B) {
 	type item struct {
 		start time.Time
-		end time.Time
+		end   time.Time
 	}
-	for size := 1 << 16; size <= 1 << 20; size <<= 1 {
-		for routines := 1; routines <= 1 << 8; routines <<= 1 {
+	for size := 1 << 16; size <= 1<<20; size <<= 1 {
+		for routines := 1; routines <= 1<<8; routines <<= 1 {
 			b.Run(fmt.Sprintf("routines:%d/size:%d", routines, size), func(b *testing.B) {
 				cb := NewCircularBuffer(uint32(size))
 				if cb == nil {

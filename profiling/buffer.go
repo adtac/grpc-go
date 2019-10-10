@@ -1,16 +1,16 @@
 package profiling
 
 import (
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"unsafe"
-	"runtime"
 )
 
 func floorCpuCount() uint32 {
 	n := uint32(runtime.NumCPU())
 	for i := uint32(1 << 31); i >= 2; i >>= 1 {
-		if n & i > 0 {
+		if n&i > 0 {
 			return i
 		}
 	}
@@ -22,24 +22,24 @@ var numCircularBufferPairs = floorCpuCount()
 var numCircularBufferPairsMask = numCircularBufferPairs - 1
 
 type item struct {
-	ptr unsafe.Pointer
+	ptr      unsafe.Pointer
 	acquired uint32
 }
 
 type queue struct {
-	arr      []item
-	size     uint32
-	mask     uint32
-	acquired uint32
+	arr               []item
+	size              uint32
+	mask              uint32
+	acquired          uint32
 	drainingPostCheck uint32
 }
 
 // Allocates and returns a queue.
 func NewQueue(size uint32) (q *queue) {
 	q = &queue{
-		arr: make([]item, size),
-		size: size,
-		mask: size - 1,
+		arr:      make([]item, size),
+		size:     size,
+		mask:     size - 1,
 		acquired: 0,
 	}
 
@@ -62,7 +62,7 @@ func (q *queue) drainWait() {
 type queuePair struct {
 	q0 unsafe.Pointer
 	q1 unsafe.Pointer
-	q unsafe.Pointer
+	q  unsafe.Pointer
 }
 
 func NewQueuePair(size uint32) (qp *queuePair) {
@@ -79,12 +79,12 @@ func NewQueuePair(size uint32) (qp *queuePair) {
 // at the start of execution.
 //
 // Returns a reference to the old queue.
-func (qp *queuePair) switchQueues() (*queue) {
+func (qp *queuePair) switchQueues() *queue {
 	if !atomic.CompareAndSwapPointer(&qp.q, qp.q0, qp.q1) {
 		atomic.CompareAndSwapPointer(&qp.q, qp.q1, qp.q0)
-		return (*queue) (qp.q1)
+		return (*queue)(qp.q1)
 	} else {
-		return (*queue) (qp.q0)
+		return (*queue)(qp.q0)
 	}
 }
 
@@ -92,8 +92,8 @@ func (qp *queuePair) switchQueues() (*queue) {
 // elements, to be specific). A fixed size buffer is used so that there are no
 // allocation costs at runtime.
 type CircularBuffer struct {
-	mu sync.Mutex
-	qp []*queuePair
+	mu  sync.Mutex
+	qp  []*queuePair
 	qpn uint32
 }
 
@@ -101,7 +101,7 @@ type CircularBuffer struct {
 // struct. Only circular buffers of size 2^k are allowed (saves us from having
 // to do expensive modulo operations).
 func NewCircularBuffer(size uint32) (cb *CircularBuffer) {
-	if size & (size - 1) != 0 {
+	if size&(size-1) != 0 {
 		return nil
 	}
 
@@ -117,7 +117,7 @@ func NewCircularBuffer(size uint32) (cb *CircularBuffer) {
 // Pushes an element in to the circular buffer.
 func (cb *CircularBuffer) Push(x interface{}) {
 	n := atomic.AddUint32(&cb.qpn, 1) & numCircularBufferPairsMask
-	q := (*queue) (atomic.LoadPointer(&cb.qp[n].q))
+	q := (*queue)(atomic.LoadPointer(&cb.qp[n].q))
 
 	acquired := atomic.AddUint32(&q.acquired, 1) - 1
 
@@ -137,7 +137,7 @@ func (cb *CircularBuffer) Push(x interface{}) {
 	}
 
 	// At this point, we're definitely writing to the right queue. That is, one
-	// of the following is true: 
+	// of the following is true:
 	//   1. No drainer is in execution.
 	//   2. A drainer is in execution and it is waiting at the acquired barrier.
 	index := acquired & q.mask
@@ -196,9 +196,9 @@ func (cb *CircularBuffer) Push(x interface{}) {
 // Dereferences non-nil pointers from arr into result. Range of elements from
 // arr that are copied is [from, to). Assumes that the result slice is already
 // allocated and is large enough to hold all the elements that might be copied.
-func dereferenceAppend(result []interface{}, arr []item, from, to uint32) ([]interface{}) {
+func dereferenceAppend(result []interface{}, arr []item, from, to uint32) []interface{} {
 	for i := from; i < to; i++ {
-		x := (*interface{}) (arr[i].ptr)
+		x := (*interface{})(arr[i].ptr)
 		if x != nil {
 			result = append(result, *x)
 		}
