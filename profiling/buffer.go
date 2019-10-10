@@ -7,7 +7,12 @@ import (
 	"runtime"
 )
 
-type circularBufferQueue struct {
+var (
+	numCircularBufferPairs uint32 = 6
+	numCircularBufferPairsMask = numCircularBufferPairs - 1
+)
+
+type queue struct {
 	arr      []unsafe.Pointer
 	size     uint32
 	mask     uint32
@@ -16,9 +21,9 @@ type circularBufferQueue struct {
 	drainingPostCheck uint32
 }
 
-// Allocates and returns a circularBufferQueue.
-func NewCircularBufferQueue(size uint32) (*circularBufferQueue) {
-	return &circularBufferQueue{
+// Allocates and returns a queue.
+func NewQueue(size uint32) (*queue) {
+	return &queue{
 		arr: make([]unsafe.Pointer, size),
 		size: size,
 		mask: size - 1,
@@ -29,23 +34,41 @@ func NewCircularBufferQueue(size uint32) (*circularBufferQueue) {
 
 // Used by the drainer to block till all pushes to the queue are complete
 // before returns. This condition is not met as long as acquired != written.
-func (q *circularBufferQueue) drainWait() {
+func (q *queue) drainWait() {
 	for atomic.LoadUint32(&q.acquired) != atomic.LoadUint32(&q.written) {
 		runtime.Gosched()
 		continue
 	}
 }
 
-/*
-type circularBufferQueueSet struct {
-	qs []*circularBufferQueue
+type queuePair struct {
+	q0 unsafe.Pointer
+	q1 unsafe.Pointer
+	q unsafe.Pointer
 }
 
-func NewCircularBufferQueueSet(size uint32) (*circularBufferQueueSet) {
-	qs := make([]*circularBufferQueue, 
-	return &circularBufferQueueSet{qs: qs}
+func NewQueuePair(size uint32) (qp *queuePair) {
+	qp = &queuePair{}
+	qp.q0 = unsafe.Pointer(NewQueue(size))
+	qp.q1 = unsafe.Pointer(NewQueue(size))
+	qp.q = qp.q0
+	return
 }
-*/
+
+// Switches the current queue for future pushes to proceed to the other queue
+// so that there's no blocking. Assumes mutual exclusion across all drainers,
+// however; this mutual exclusion is guaranteed by the mutex obtained by Drain
+// at the start of execution.
+//
+// Returns a reference to the old queue.
+func (qp *queuePair) switchQueues() (*queue) {
+	if !atomic.CompareAndSwapPointer(&qp.q, qp.q0, qp.q1) {
+		atomic.CompareAndSwapPointer(&qp.q, qp.q1, qp.q0)
+		return (*queue) (qp.q1)
+	} else {
+		return (*queue) (qp.q0)
+	}
+}
 
 // A circular buffer can store up to size elements (the most recent size
 // elements, to be specific). A fixed size buffer is used so that there are no
@@ -56,10 +79,8 @@ func NewCircularBufferQueueSet(size uint32) (*circularBufferQueueSet) {
 // store more than 4e9 elements in the circular buffer.
 type CircularBuffer struct {
 	mu sync.Mutex
-	// TODO: multiple queues to decrease write contention on acquired and written?
-	q0 unsafe.Pointer
-	q1 unsafe.Pointer
-	q unsafe.Pointer
+	qp []*queuePair
+	qpn uint32
 }
 
 // Allocates a circular buffer of size size and returns a reference to the
@@ -71,16 +92,18 @@ func NewCircularBuffer(size uint32) (cb *CircularBuffer) {
 	}
 
 	cb = &CircularBuffer{}
-	cb.q0 = unsafe.Pointer(NewCircularBufferQueue(size))
-	cb.q1 = unsafe.Pointer(NewCircularBufferQueue(size))
-	cb.q = cb.q0
+	cb.qp = make([]*queuePair, numCircularBufferPairs)
+	for i := uint32(0); i < numCircularBufferPairs; i++ {
+		cb.qp[i] = NewQueuePair(size / numCircularBufferPairs)
+	}
 
 	return
 }
 
 // Pushes an element in to the circular buffer.
 func (cb *CircularBuffer) Push(x interface{}) {
-	q := (*circularBufferQueue) (atomic.LoadPointer(&cb.q))
+	n := atomic.AddUint32(&cb.qpn, 1) % numCircularBufferPairs
+	q := (*queue) (atomic.LoadPointer(&cb.qp[n].q))
 
 	acquired := atomic.AddUint32(&q.acquired, 1) - 1
 
@@ -157,60 +180,53 @@ func (cb *CircularBuffer) Push(x interface{}) {
 	atomic.AddUint32(&q.written, 1)
 }
 
-// Switches the current queue for future pushes to proceed to the other queue
-// so that there's no blocking. Assumes mutual exclusion across all drainers,
-// however; this mutual exclusion is guaranteed by the mutex obtained by Drain
-// at the start of execution.
-//
-// Returns a reference to the old queue.
-func (cb *CircularBuffer) switchQueues() (*circularBufferQueue) {
-	if !atomic.CompareAndSwapPointer(&cb.q, cb.q0, cb.q1) {
-		atomic.CompareAndSwapPointer(&cb.q, cb.q1, cb.q0)
-		return (*circularBufferQueue) (cb.q1)
-	} else {
-		return (*circularBufferQueue) (cb.q0)
-	}
-}
-
-// Dereferences and copies non-null pointers from arr into result. Range of
-// elements from arr that are copied is [arrFrom, arrTo). Assumes that the
-// result slice is already allocated and is large enough to hold all the
-// elements that might be copied.
-func dereferenceAppend(result []interface{}, arr []unsafe.Pointer, resultOffset, arrFrom, arrTo uint32) uint32 {
-	j := resultOffset
-	for i := arrFrom; i < arrTo; i++ {
+// Dereferences non-nil pointers from arr into result. Range of elements from
+// arr that are copied is [from, to). Assumes that the result slice is already
+// allocated and is large enough to hold all the elements that might be copied.
+func dereferenceAppend(result []interface{}, arr []unsafe.Pointer, from, to uint32) ([]interface{}) {
+	for i := from; i < to; i++ {
 		x := (*interface{}) (arr[i])
 		if x != nil {
-			result[j] = *x
-			j += 1
+			result = append(result, *x)
 		}
 	}
-
-	return j
+	return result
 }
 
 // Allocates and returns an array of things pushed in to the circular buffer.
+// Push order is not guaranteed; that is, if B was pushed after A, Drain may
+// return B at a lower index than A in the returned array even if the circular
+// buffer hasn't wrapped around.
 func (cb *CircularBuffer) Drain() (result []interface{}) {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
-	q := cb.switchQueues()
-	q.drainWait()
-	atomic.StoreUint32(&q.drainingPostCheck, 1)
-
-	if q.written < q.size {
-		result = make([]interface{}, q.written)
-		dereferenceAppend(result, q.arr, 0, 0, q.size)
-	} else {
-		result = make([]interface{}, q.size)
-		cur := q.written & q.mask
-		j := dereferenceAppend(result, q.arr, 0, cur, q.size)
-		dereferenceAppend(result, q.arr, j, 0, cur)
+	qs := make([]*queue, 0)
+	for i := uint32(0); i < numCircularBufferPairs; i++ {
+		qs = append(qs, cb.qp[i].switchQueues())
 	}
 
-	atomic.StoreUint32(&q.drainingPostCheck, 0)
-	q.acquired = 0
-	q.written = 0
+	// Wait for acquired == written after all queues have been switched so that
+	// as few samples as thrown away by the drainingPostCheck check in Push.
+	for i := uint32(0); i < numCircularBufferPairs; i++ {
+		qs[i].drainWait()
+		atomic.StoreUint32(&qs[i].drainingPostCheck, 1)
+	}
+
+	result = make([]interface{}, 0)
+	for i := uint32(0); i < numCircularBufferPairs; i++ {
+		if qs[i].written < qs[i].size {
+			result = dereferenceAppend(result, qs[i].arr, 0, qs[i].written)
+		} else {
+			result = dereferenceAppend(result, qs[i].arr, 0, qs[i].size)
+		}
+	}
+
+	for i := uint32(0); i < numCircularBufferPairs; i++ {
+		atomic.StoreUint32(&qs[i].drainingPostCheck, 0)
+		qs[i].acquired = 0
+		qs[i].written = 0
+	}
 
 	return
 }
