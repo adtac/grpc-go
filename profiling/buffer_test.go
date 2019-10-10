@@ -151,13 +151,10 @@ func BenchmarkCircularBuffer(b *testing.B) {
 					wg.Add(1)
 					go func() {
 						for i := 0; i < perRoutine; i++ {
-							/*
 							x := item{}
 							x.start = time.Now().UTC()
 							x.end = time.Now().UTC()
 							cb.Push(x)
-							*/
-							cb.Push(0)
 						}
 						wg.Done()
 					}()
