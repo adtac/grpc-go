@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+option go_package = "google.golang.org/grpc/profiling/proto/tags";
+
+enum StatTag {
+	MESSAGE_SERVER_STREAM_SEND        = 0x00;
+	MESSAGE_SERVER_STREAM_RECV        = 0x01;
+	MESSAGE_CLIENT_STREAM_SEND        = 0x02;
+	MESSAGE_CLIENT_STREAM_RECV        = 0x03;
+}
+
+enum TimerTag {
+	MESSAGE_OVERALL                   = 0x00;
+	MESSAGE_HEADER                    = 0x01;
+	MESSAGE_COMPRESSION               = 0x02;
+	MESSAGE_ENCODING                  = 0x03;
+	MESSAGE_CRYPTO                    = 0x04;
+	MESSAGE_TRANSPORT                 = 0x05;
+}
