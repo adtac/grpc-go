@@ -42,7 +42,6 @@ import (
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/internal/profiling"
-	ptpb "google.golang.org/grpc/profiling/proto/tags"
 )
 
 // StreamHandler defines the handler called by gRPC server to complete the
@@ -682,8 +681,8 @@ func (cs *clientStream) bufferForRetryLocked(sz int, op func(a *csAttempt) error
 func (cs *clientStream) SendMsg(m interface{}) (err error) {
 	var stat *profiling.Stat
 	if profiling.IsEnabled() {
-		stat = profiling.NewStat(ptpb.StatTag_MESSAGE_CLIENT_STREAM_SEND)
-		timer := stat.NewTimer(ptpb.TimerTag_MESSAGE_OVERALL)
+		stat = profiling.NewStat("client/stream/message/send")
+		timer := stat.NewTimer("message")
 		defer profiling.MessageStats.Push(stat)
 		defer timer.Egress()
 		timer.Ingress()
@@ -737,8 +736,8 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 func (cs *clientStream) RecvMsg(m interface{}) error {
 	var stat *profiling.Stat
 	if profiling.IsEnabled() {
-		stat = profiling.NewStat(ptpb.StatTag_MESSAGE_CLIENT_STREAM_RECV)
-		timer := stat.NewTimer(ptpb.TimerTag_MESSAGE_OVERALL)
+		stat = profiling.NewStat("client/stream/message/recv")
+		timer := stat.NewTimer("message")
 		defer profiling.MessageStats.Push(stat)
 		defer timer.Egress()
 		timer.Ingress()
@@ -1402,8 +1401,8 @@ func (ss *serverStream) SetTrailer(md metadata.MD) {
 func (ss *serverStream) SendMsg(m interface{}) (err error) {
 	var stat *profiling.Stat
 	if profiling.IsEnabled() {
-		stat = profiling.NewStat(ptpb.StatTag_MESSAGE_SERVER_STREAM_SEND)
-		overallTimer := stat.NewTimer(ptpb.TimerTag_MESSAGE_OVERALL)
+		stat = profiling.NewStat("server/stream/message/send")
+		overallTimer := stat.NewTimer("message")
 		defer profiling.MessageStats.Push(stat)
 		defer overallTimer.Egress()
 		overallTimer.Ingress()
@@ -1440,7 +1439,7 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 	// load hdr, payload, data
 	var miscTimer *profiling.Timer
 	if stat != nil && false {
-		miscTimer = stat.NewTimer(ptpb.TimerTag_MESSAGE_MISC)
+		miscTimer = stat.NewTimer("message/misc")
 		miscTimer.Ingress()
 	}
 	hdr, payload, data, err := prepareMsg(m, ss.codec, ss.cp, ss.comp, stat)
@@ -1458,7 +1457,7 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 
 	var transportTimer *profiling.Timer
 	if stat != nil {
-		transportTimer = stat.NewTimer(ptpb.TimerTag_MESSAGE_TRANSPORT)
+		transportTimer = stat.NewTimer("message/transport")
 		transportTimer.Ingress()
 	}
 	if err := ss.t.Write(ss.s, hdr, payload, &transport.Options{Last: false}); err != nil {
@@ -1489,8 +1488,8 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 	var stat *profiling.Stat
 	if profiling.IsEnabled() {
-		stat = profiling.NewStat(ptpb.StatTag_MESSAGE_SERVER_STREAM_RECV)
-		timer := stat.NewTimer(ptpb.TimerTag_MESSAGE_OVERALL)
+		stat = profiling.NewStat("server/stream/message/recv")
+		timer := stat.NewTimer("message")
 		defer profiling.MessageStats.Push(stat)
 		defer timer.Egress()
 		timer.Ingress()
@@ -1574,7 +1573,7 @@ func prepareMsg(m interface{}, codec baseCodec, cp Compressor, comp encoding.Com
 	// Marshal and Compress the data at this point
 	var encodingTimer *profiling.Timer
 	if stat != nil {
-		encodingTimer = stat.NewTimer(ptpb.TimerTag_MESSAGE_ENCODING)
+		encodingTimer = stat.NewTimer("message/encoding")
 		encodingTimer.Ingress()
 	}
 	data, err = encode(codec, m)
@@ -1587,7 +1586,7 @@ func prepareMsg(m interface{}, codec baseCodec, cp Compressor, comp encoding.Com
 
 	var compressionTimer *profiling.Timer
 	if stat != nil {
-		compressionTimer = stat.NewTimer(ptpb.TimerTag_MESSAGE_COMPRESSION)
+		compressionTimer = stat.NewTimer("message/compression")
 		compressionTimer.Ingress()
 	}
 	compData, err := compress(data, cp, comp)
@@ -1600,7 +1599,7 @@ func prepareMsg(m interface{}, codec baseCodec, cp Compressor, comp encoding.Com
 
 	var headerTimer *profiling.Timer
 	if stat != nil {
-		headerTimer = stat.NewTimer(ptpb.TimerTag_MESSAGE_HEADER)
+		headerTimer = stat.NewTimer("message/header")
 		headerTimer.Ingress()
 	}
 	hdr, payload = msgHeader(data, compData)

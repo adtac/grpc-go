@@ -15,7 +15,6 @@ import (
 	"google.golang.org/grpc/internal/profiling"
 	"google.golang.org/grpc/profiling/proto"
 	pspb "google.golang.org/grpc/profiling/proto/service"
-	ptpb "google.golang.org/grpc/profiling/proto/tags"
 )
 
 var address = flag.String("address", "", "address of your remote target")
@@ -30,7 +29,6 @@ var loadSnapshotFile = flag.String("load-snapshot", "", "load a local profiling 
 var listAll = flag.Bool("list-all", false, "list profiles of all kinds raw")
 var listMessages = flag.Bool("list-messages", false, "list message profiles raw")
 var showPercent = flag.Bool("show-percent", false, "show percent of overall for timer components")
-var delimiter = flag.String("delimiter", "\t", "delimiter to use between timer components")
 
 func parseArgs() error {
 	flag.Parse()
@@ -122,33 +120,43 @@ func getTimerNano(timer *profiling.Timer) int64 {
 	return int64(timer.End.Sub(timer.Begin))
 }
 
-func prettifyTimerTag(prefix string, timer *profiling.Timer) string {
-	return strings.ReplaceAll(ptpb.TimerTag_name[int32(timer.TimerTag)], prefix, "")
-}
-
-func prettifyStatTag(prefix string, stat *profiling.Stat) string {
-	return strings.ToLower(strings.ReplaceAll(ptpb.StatTag_name[int32(stat.StatTag)], prefix, ""))
+func getTimerTimestamp(t time.Time) string {
+	return fmt.Sprintf("%d.%09d", t.Unix(), t.Nanosecond())
 }
 
 func listMessageStat(stat *profiling.Stat) {
+	if len(stat.Timers) == 0 {
+		return
+	}
+
 	overallNano := getTimerNano(stat.Timers[0])
 
-	fmt.Printf("%v%s", prettifyStatTag("", stat), *delimiter)
-	fmt.Printf("@%d.%09d%s", stat.Timers[0].Begin.Unix(), stat.Timers[0].Begin.Nanosecond(), *delimiter)
-	fmt.Printf("O=%d%s", overallNano, *delimiter)
+	fmt.Printf("%v\n", stat.StatTag)
+
+	sort.Slice(stat.Timers, func(i, j int) bool {
+		if stat.Timers[i].TimerTag == "message/overall" {
+			return true
+		} else if stat.Timers[j].TimerTag == "message/overall" {
+			return false
+		}
+		return strings.Compare(stat.Timers[i].TimerTag, stat.Timers[j].TimerTag) < 0
+	})
 
 	var others int64 = 0
-	for i := 1; i < len(stat.Timers); i++ {
+	for i := 0; i < len(stat.Timers); i++ {
+		splitTag := strings.Split(stat.Timers[i].TimerTag, "/")
+		for t := 0; t < len(splitTag); t++ {
+			fmt.Printf("  ")
+		}
+
 		nano := getTimerNano(stat.Timers[i])
 		others += nano
-		fmt.Printf("%s=%d", prettifyTimerTag("MESSAGE_", stat.Timers[i])[:1], nano)
+		fmt.Printf("%s\t\t%d", splitTag[len(splitTag)-1], nano)
 		if *showPercent {
-			fmt.Printf("(%d%%)", (100*nano)/overallNano)
+			fmt.Printf("\t~ %d%%", (100*nano)/overallNano)
 		}
-		fmt.Printf("%s", *delimiter)
-	}
-	if *showPercent {
-		fmt.Printf("U=%d(%d%%)%s", overallNano - others, (100*(overallNano - others)) / overallNano, *delimiter)
+		fmt.Printf("\t@ %s - %s", getTimerTimestamp(stat.Timers[i].Begin), getTimerTimestamp(stat.Timers[i].End))
+		fmt.Printf("\n")
 	}
 	fmt.Printf("\n")
 }
@@ -156,6 +164,11 @@ func listMessageStat(stat *profiling.Stat) {
 func listAllMessages(stats []*profiling.Stat) {
 	fmt.Printf("legend: O=overall, U=unaccounted, H=headers, T=transport, C=compression, E=encoding\n")
 	sort.Slice(stats, func(i, j int) bool {
+		if len(stats[j].Timers) == 0 {
+			return true
+		} else if len(stats[i].Timers) == 0 {
+			return false
+		}
 		return stats[i].Timers[0].Begin.Before(stats[j].Timers[0].Begin)
 	})
 	for _, stat := range stats {

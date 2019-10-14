@@ -3,7 +3,6 @@ package profiling
 import (
 	"sync/atomic"
 	"time"
-	ptpb "google.golang.org/grpc/profiling/proto/tags"
 )
 
 var profilingEnabled uint32
@@ -21,12 +20,12 @@ func SetEnabled(enabled bool) {
 }
 
 type Timer struct {
-	TimerTag ptpb.TimerTag
+	TimerTag string
 	Begin time.Time
 	End time.Time
 }
 
-func newTimer(timerTag ptpb.TimerTag) (*Timer) {
+func newTimer(timerTag string) (*Timer) {
 	return &Timer{TimerTag: timerTag}
 }
 
@@ -39,15 +38,15 @@ func (t *Timer) Egress() {
 }
 
 type Stat struct {
-	StatTag ptpb.StatTag
+	StatTag string
 	Timers []*Timer
 }
 
-func NewStat(statTag ptpb.StatTag) *Stat {
+func NewStat(statTag string) *Stat {
 	return &Stat{StatTag: statTag, Timers: make([]*Timer, 0)}
 }
 
-func (stat *Stat) NewTimer(timerTag ptpb.TimerTag) *Timer {
+func (stat *Stat) NewTimer(timerTag string) *Timer {
 	timer := newTimer(timerTag)
 	stat.Timers = append(stat.Timers, timer)
 	return timer

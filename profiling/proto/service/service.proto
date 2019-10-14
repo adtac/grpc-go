@@ -2,8 +2,6 @@ syntax = "proto3";
 
 option go_package = "google.golang.org/grpc/profiling/proto/service";
 
-import "tags/tags.proto";
-
 message SetEnabledRequest {
 	bool enabled = 1;
 }
@@ -13,7 +11,7 @@ message SetEnabledResponse {
 }
 
 message TimerProto {
-	TimerTag timerTag = 1;
+	string timerTag = 1;
 	int64 beginSec = 2;
 	int32 beginNsec = 3;
 	int64 endSec = 4;
@@ -24,7 +22,7 @@ message GetMessageStatsRequest {
 }
 
 message StatProto {
-	StatTag statTag = 1;
+	string statTag = 1;
 	repeated TimerProto timerProtos = 2;
 }
 
