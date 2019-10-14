@@ -1,25 +1,36 @@
 package main
 
 import (
+	"sort"
+	"strings"
 	"time"
 	"io"
 	"context"
 	"fmt"
 	"flag"
+	"os"
+	"encoding/gob"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
-	"google.golang.org/grpc/profiling/metrics"
+	"google.golang.org/grpc/internal/profiling"
 	"google.golang.org/grpc/profiling/proto"
 	pspb "google.golang.org/grpc/profiling/proto/service"
-	// ptpb "google.golang.org/grpc/profiling/proto/service"
+	ptpb "google.golang.org/grpc/profiling/proto/tags"
 )
 
 var address = flag.String("address", "", "address of your remote target")
 var timeout = flag.Int("timeout", 0, "network operations timeout in seconds to remote target (0 indicates unlimited)")
+
 var storeSnapshotFile = flag.String("store-snapshot", "", "connect to remote target and store a profiling snapshot locally for offline processing")
+
 var enable = flag.Bool("enable", false, "enable profiling in remote target")
 var disable = flag.Bool("disable", false, "disable profiling in remote target")
+
 var loadSnapshotFile = flag.String("load-snapshot", "", "load a local profiling snapshot for offline processing")
+var listAll = flag.Bool("list-all", false, "list profiles of all kinds raw")
+var listMessages = flag.Bool("list-messages", false, "list message profiles raw")
+var showPercent = flag.Bool("show-percent", false, "show percent of overall for timer components")
+var delimiter = flag.String("delimiter", "\t", "delimiter to use between timer components")
 
 func parseArgs() error {
 	flag.Parse()
@@ -62,36 +73,123 @@ func setEnabled(ctx context.Context, c pspb.ProfilingClient, enabled bool) {
 }
 
 type snapshot struct {
-	MessageStats []*metrics.Stat
+	MessageStats []*profiling.Stat
 }
 
 func storeSnapshot(ctx context.Context, c pspb.ProfilingClient, f string) {
-	grpclog.Infof("making RPC call to retrieve message stats from remote target")
-	stream, err := c.GetMessageStats(ctx, &pspb.GetMessageStatsRequest{})
+	grpclog.Infof("creating %s", f)
+	file, err := os.Create(f)
 	if err != nil {
-		grpclog.Errorf("error calling SetEnabled: %v\n", err)
+		grpclog.Errorf("cannot create %s: %v", f, err)
 		return
 	}
 
-	s := &snapshot{MessageStats: make([]*metrics.Stat, 0)}
+	grpclog.Infof("making RPC call to retrieve message stats from remote target")
+	stream, err := c.GetMessageStats(ctx, &pspb.GetMessageStatsRequest{})
+	if err != nil {
+		grpclog.Errorf("error calling GetMessageStats: %v\n", err)
+		return
+	}
+
+	s := &snapshot{MessageStats: make([]*profiling.Stat, 0)}
 
 	for {
 		resp, err := stream.Recv()
+
 		if err == io.EOF {
 			grpclog.Infof("recvd EOF, last")
-			return
+			break
 		}
+
 		if err != nil {
 			grpclog.Errorf("error recv: %v", err)
 			return
 		}
 
-		grpclog.Infof("%v", resp)
-		s.MessageStats = append(s.MessageStats, proto.StatProtoToStat(resp))
+		stat := proto.StatProtoToStat(resp)
+		s.MessageStats = append(s.MessageStats, stat)
+	}
+
+	grpclog.Infof("writing to %s", f)
+	encoder := gob.NewEncoder(file)
+	encoder.Encode(s)
+
+	file.Close()
+	grpclog.Infof("successfully wrote profiling snapshot to %s", f)
+}
+
+func getTimerNano(timer *profiling.Timer) int64 {
+	return int64(timer.End.Sub(timer.Begin))
+}
+
+func prettifyTimerTag(prefix string, timer *profiling.Timer) string {
+	return strings.ReplaceAll(ptpb.TimerTag_name[int32(timer.TimerTag)], prefix, "")
+}
+
+func prettifyStatTag(prefix string, stat *profiling.Stat) string {
+	return strings.ToLower(strings.ReplaceAll(ptpb.StatTag_name[int32(stat.StatTag)], prefix, ""))
+}
+
+func listMessageStat(stat *profiling.Stat) {
+	overallNano := getTimerNano(stat.Timers[0])
+
+	fmt.Printf("%v%s", prettifyStatTag("", stat), *delimiter)
+	fmt.Printf("@%d.%09d%s", stat.Timers[0].Begin.Unix(), stat.Timers[0].Begin.Nanosecond(), *delimiter)
+	fmt.Printf("O=%d%s", overallNano, *delimiter)
+
+	var others int64 = 0
+	for i := 1; i < len(stat.Timers); i++ {
+		nano := getTimerNano(stat.Timers[i])
+		others += nano
+		fmt.Printf("%s=%d", prettifyTimerTag("MESSAGE_", stat.Timers[i])[:1], nano)
+		if *showPercent {
+			fmt.Printf("(%d%%)", (100*nano)/overallNano)
+		}
+		fmt.Printf("%s", *delimiter)
+	}
+	if *showPercent {
+		fmt.Printf("U=%d(%d%%)%s", overallNano - others, (100*(overallNano - others)) / overallNano, *delimiter)
+	}
+	fmt.Printf("\n")
+}
+
+func listAllMessages(stats []*profiling.Stat) {
+	fmt.Printf("legend: O=overall, U=unaccounted, H=headers, T=transport, C=compression, E=encoding\n")
+	sort.Slice(stats, func(i, j int) bool {
+		return stats[i].Timers[0].Begin.Before(stats[j].Timers[0].Begin)
+	})
+	for _, stat := range stats {
+		listMessageStat(stat)
+	}
+}
+
+func process(s *snapshot) {
+	if *listAll {
+		listAllMessages(s.MessageStats)
+	} else if *listMessages {
+		listAllMessages(s.MessageStats)
+	} else {
+		fmt.Printf("no action specified\n")
 	}
 }
 
 func loadSnapshot(f string) {
+	grpclog.Infof("loading %s", f)
+	file, err := os.Open(f)
+	if err != nil {
+		grpclog.Errorf("cannot open %s: %v", f, err)
+		return
+	}
+
+	s := &snapshot{}
+
+	decoder := gob.NewDecoder(file)
+	if err = decoder.Decode(s); err != nil {
+		grpclog.Errorf("cannot decode %s: %v", f, err)
+		return
+	}
+
+	process(s)
 }
 
 func main() {

@@ -2,11 +2,11 @@ package proto
 
 import (
 	"time"
-	"google.golang.org/grpc/profiling/metrics"
+	"google.golang.org/grpc/internal/profiling"
 	pspb "google.golang.org/grpc/profiling/proto/service"
 )
 
-func timerToTimerProto(timer *metrics.Timer) *pspb.TimerProto {
+func timerToTimerProto(timer *profiling.Timer) *pspb.TimerProto {
 	return &pspb.TimerProto{
 		TimerTag: timer.TimerTag,
 		BeginSec: timer.Begin.Unix(),
@@ -16,7 +16,7 @@ func timerToTimerProto(timer *metrics.Timer) *pspb.TimerProto {
 	}
 }
 
-func StatToStatProto(stat *metrics.Stat) *pspb.StatProto {
+func StatToStatProto(stat *profiling.Stat) *pspb.StatProto {
 	statProto := &pspb.StatProto{StatTag: stat.StatTag, TimerProtos: make([]*pspb.TimerProto, 0)}
 	for _, t := range stat.Timers {
 		statProto.TimerProtos = append(statProto.TimerProtos, timerToTimerProto(t))
@@ -25,16 +25,16 @@ func StatToStatProto(stat *metrics.Stat) *pspb.StatProto {
 	return statProto
 }
 
-func timerProtoToTimer(timerProto *pspb.TimerProto) *metrics.Timer {
-	return &metrics.Timer{
+func timerProtoToTimer(timerProto *pspb.TimerProto) *profiling.Timer {
+	return &profiling.Timer{
 		TimerTag: timerProto.TimerTag,
 		Begin: time.Unix(timerProto.BeginSec, int64(timerProto.BeginNsec)),
 		End: time.Unix(timerProto.EndSec, int64(timerProto.EndNsec)),
 	}
 }
 
-func StatProtoToStat(statProto *pspb.StatProto) *metrics.Stat {
-	s := &metrics.Stat{Timers: make([]*metrics.Timer, 0)}
+func StatProtoToStat(statProto *pspb.StatProto) *profiling.Stat {
+	s := &profiling.Stat{StatTag: statProto.StatTag, Timers: make([]*profiling.Timer, 0)}
 	for _, timerProto := range statProto.TimerProtos {
 		s.Timers = append(s.Timers, timerProtoToTimer(timerProto))
 	}

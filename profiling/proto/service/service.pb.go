@@ -143,7 +143,7 @@ func (m *TimerProto) GetTimerTag() tags.TimerTag {
 	if m != nil {
 		return m.TimerTag
 	}
-	return tags.TimerTag_MESSAGE_OVERALL
+	return tags.TimerTag_TIMER_TAG_ZERO
 }
 
 func (m *TimerProto) GetBeginSec() int64 {
@@ -242,7 +242,7 @@ func (m *StatProto) GetStatTag() tags.StatTag {
 	if m != nil {
 		return m.StatTag
 	}
-	return tags.StatTag_MESSAGE_SERVER_STREAM_SEND
+	return tags.StatTag_STAT_TAG_ZERO
 }
 
 func (m *StatProto) GetTimerProtos() []*TimerProto {

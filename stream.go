@@ -41,7 +41,7 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/profiling/metrics"
+	"google.golang.org/grpc/internal/profiling"
 	ptpb "google.golang.org/grpc/profiling/proto/tags"
 )
 
@@ -680,11 +680,11 @@ func (cs *clientStream) bufferForRetryLocked(sz int, op func(a *csAttempt) error
 }
 
 func (cs *clientStream) SendMsg(m interface{}) (err error) {
-	var stat *metrics.Stat
-	if metrics.IsEnabled() {
-		stat = metrics.NewStat(ptpb.StatTag_MESSAGE_CLIENT_STREAM_SEND)
+	var stat *profiling.Stat
+	if profiling.IsEnabled() {
+		stat = profiling.NewStat(ptpb.StatTag_MESSAGE_CLIENT_STREAM_SEND)
 		timer := stat.NewTimer(ptpb.TimerTag_MESSAGE_OVERALL)
-		defer metrics.MessageStats.Push(stat)
+		defer profiling.MessageStats.Push(stat)
 		defer timer.Egress()
 		timer.Ingress()
 	}
@@ -735,6 +735,15 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 }
 
 func (cs *clientStream) RecvMsg(m interface{}) error {
+	var stat *profiling.Stat
+	if profiling.IsEnabled() {
+		stat = profiling.NewStat(ptpb.StatTag_MESSAGE_CLIENT_STREAM_RECV)
+		timer := stat.NewTimer(ptpb.TimerTag_MESSAGE_OVERALL)
+		defer profiling.MessageStats.Push(stat)
+		defer timer.Egress()
+		timer.Ingress()
+	}
+
 	if cs.binlog != nil && !cs.serverHeaderBinlogged {
 		// Call Header() to binary log header if it's not already logged.
 		cs.Header()
@@ -1391,13 +1400,13 @@ func (ss *serverStream) SetTrailer(md metadata.MD) {
 }
 
 func (ss *serverStream) SendMsg(m interface{}) (err error) {
-	var stat *metrics.Stat
-	if metrics.IsEnabled() {
-		stat = metrics.NewStat(ptpb.StatTag_MESSAGE_SERVER_STREAM_SEND)
-		timer := stat.NewTimer(ptpb.TimerTag_MESSAGE_OVERALL)
-		defer metrics.MessageStats.Push(stat)
-		defer timer.Egress()
-		timer.Ingress()
+	var stat *profiling.Stat
+	if profiling.IsEnabled() {
+		stat = profiling.NewStat(ptpb.StatTag_MESSAGE_SERVER_STREAM_SEND)
+		overallTimer := stat.NewTimer(ptpb.TimerTag_MESSAGE_OVERALL)
+		defer profiling.MessageStats.Push(stat)
+		defer overallTimer.Egress()
+		overallTimer.Ingress()
 	}
 
 	defer func() {
@@ -1429,18 +1438,36 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 	}()
 
 	// load hdr, payload, data
+	var miscTimer *profiling.Timer
+	if stat != nil && false {
+		miscTimer = stat.NewTimer(ptpb.TimerTag_MESSAGE_MISC)
+		miscTimer.Ingress()
+	}
 	hdr, payload, data, err := prepareMsg(m, ss.codec, ss.cp, ss.comp, stat)
 	if err != nil {
 		return err
+	}
+	if stat != nil && false {
+		miscTimer.Egress()
 	}
 
 	// TODO(dfawley): should we be checking len(data) instead?
 	if len(payload) > ss.maxSendMessageSize {
 		return status.Errorf(codes.ResourceExhausted, "trying to send message larger than max (%d vs. %d)", len(payload), ss.maxSendMessageSize)
 	}
+
+	var transportTimer *profiling.Timer
+	if stat != nil {
+		transportTimer = stat.NewTimer(ptpb.TimerTag_MESSAGE_TRANSPORT)
+		transportTimer.Ingress()
+	}
 	if err := ss.t.Write(ss.s, hdr, payload, &transport.Options{Last: false}); err != nil {
 		return toRPCErr(err)
 	}
+	if stat != nil {
+		transportTimer.Egress()
+	}
+
 	if ss.binlog != nil {
 		if !ss.serverHeaderBinlogged {
 			h, _ := ss.s.Header()
@@ -1460,11 +1487,11 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 }
 
 func (ss *serverStream) RecvMsg(m interface{}) (err error) {
-	var stat *metrics.Stat
-	if metrics.IsEnabled() {
-		stat = metrics.NewStat(ptpb.StatTag_MESSAGE_SERVER_STREAM_RECV)
+	var stat *profiling.Stat
+	if profiling.IsEnabled() {
+		stat = profiling.NewStat(ptpb.StatTag_MESSAGE_SERVER_STREAM_RECV)
 		timer := stat.NewTimer(ptpb.TimerTag_MESSAGE_OVERALL)
-		defer metrics.MessageStats.Push(stat)
+		defer profiling.MessageStats.Push(stat)
 		defer timer.Egress()
 		timer.Ingress()
 	}
@@ -1539,27 +1566,47 @@ func MethodFromServerStream(stream ServerStream) (string, bool) {
 // prepareMsg returns the hdr, payload and data
 // using the compressors passed or using the
 // passed preparedmsg
-func prepareMsg(m interface{}, codec baseCodec, cp Compressor, comp encoding.Compressor, stat *metrics.Stat) (hdr, payload, data []byte, err error) {
-	if stat != nil {
-		timer := stat.NewTimer(ptpb.TimerTag_MESSAGE_HEADER)
-		defer metrics.MessageStats.Push(stat)
-		defer timer.Egress()
-		timer.Ingress()
-	}
-
+func prepareMsg(m interface{}, codec baseCodec, cp Compressor, comp encoding.Compressor, stat *profiling.Stat) (hdr, payload, data []byte, err error) {
 	if preparedMsg, ok := m.(*PreparedMsg); ok {
 		return preparedMsg.hdr, preparedMsg.payload, preparedMsg.encodedData, nil
 	}
 	// The input interface is not a prepared msg.
 	// Marshal and Compress the data at this point
+	var encodingTimer *profiling.Timer
+	if stat != nil {
+		encodingTimer = stat.NewTimer(ptpb.TimerTag_MESSAGE_ENCODING)
+		encodingTimer.Ingress()
+	}
 	data, err = encode(codec, m)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if stat != nil {
+		encodingTimer.Egress()
+	}
+
+	var compressionTimer *profiling.Timer
+	if stat != nil {
+		compressionTimer = stat.NewTimer(ptpb.TimerTag_MESSAGE_COMPRESSION)
+		compressionTimer.Ingress()
 	}
 	compData, err := compress(data, cp, comp)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	if stat != nil {
+		compressionTimer.Egress()
+	}
+
+	var headerTimer *profiling.Timer
+	if stat != nil {
+		headerTimer = stat.NewTimer(ptpb.TimerTag_MESSAGE_HEADER)
+		headerTimer.Ingress()
+	}
 	hdr, payload = msgHeader(data, compData)
+	if stat != nil {
+		headerTimer.Egress()
+	}
+
 	return hdr, payload, data, nil
 }

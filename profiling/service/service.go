@@ -5,7 +5,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
 
-	"google.golang.org/grpc/profiling/metrics"
+	"google.golang.org/grpc/internal/profiling"
 	ppb "google.golang.org/grpc/profiling/proto"
 	pspb "google.golang.org/grpc/profiling/proto/service"
 )
@@ -22,7 +22,7 @@ func registerService(s *grpc.Server) {
 }
 
 func Init(pc *ProfilingConfig) (err error) {
-	err = metrics.InitStats(pc.SampleCount)
+	err = profiling.InitStats(pc.SampleCount)
 	if err != nil {
 		return
 	}
@@ -30,7 +30,7 @@ func Init(pc *ProfilingConfig) (err error) {
 	registerService(pc.Server)
 
 	// Do this last after everything has been initialised and allocated.
-	metrics.SetEnabled(pc.Enabled)
+	profiling.SetEnabled(pc.Enabled)
 
 	return
 }
@@ -39,7 +39,7 @@ type profilingServer struct {}
 
 func (s *profilingServer) SetEnabled(ctx context.Context, req *pspb.SetEnabledRequest) (ser *pspb.SetEnabledResponse, err error) {
 	grpclog.Infof("processing SetEnabled (%v)", req.Enabled)
-	metrics.SetEnabled(req.Enabled)
+	profiling.SetEnabled(req.Enabled)
 
 	ser = &pspb.SetEnabledResponse{Success: true}
 	err = nil
@@ -48,14 +48,23 @@ func (s *profilingServer) SetEnabled(ctx context.Context, req *pspb.SetEnabledRe
 
 func (s *profilingServer) GetMessageStats(req *pspb.GetMessageStatsRequest, stream pspb.Profiling_GetMessageStatsServer) (err error) {
 	grpclog.Infof("processing stream request for message stats")
-	results := metrics.MessageStats.Drain()
+	results := profiling.MessageStats.Drain()
 	grpclog.Infof("message stats size: %v records", len(results))
+
+	enabled := profiling.IsEnabled()
+	if enabled {
+		profiling.SetEnabled(false)
+	}
+
 	for i := 0; i < len(results); i++ {
-		if err = stream.Send(ppb.StatToStatProto(results[i].(*metrics.Stat))); err != nil {
+		if err = stream.Send(ppb.StatToStatProto(results[i].(*profiling.Stat))); err != nil {
 			return
 		}
 	}
-	metrics.MessageStats.Drain()
+
+	if enabled {
+		profiling.SetEnabled(true)
+	}
 
 	return
 }
