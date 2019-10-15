@@ -29,6 +29,7 @@ var loadSnapshotFile = flag.String("load-snapshot", "", "load a local profiling 
 var listAll = flag.Bool("list-all", false, "list profiles of all kinds raw")
 var listMessages = flag.Bool("list-messages", false, "list message profiles raw")
 var showPercent = flag.Bool("show-percent", false, "show percent of overall for timer components")
+var messageFilter = flag.String("message-filter", "", "filter for message stats of this type")
 
 func parseArgs() error {
 	flag.Parse()
@@ -124,45 +125,101 @@ func getTimerTimestamp(t time.Time) string {
 	return fmt.Sprintf("%d.%09d", t.Unix(), t.Nanosecond())
 }
 
+type hierNode struct {
+	name string
+	level int
+	timers []*profiling.Timer
+	childTimers []*profiling.Timer
+	subtrees []*hierNode
+	index map[string]int
+	parent *hierNode
+}
+
+func newHierNode(name string, level int, parent *hierNode) *hierNode {
+	return &hierNode{
+		name: name,
+		level: level,
+		timers: make([]*profiling.Timer, 0),
+		childTimers: make([]*profiling.Timer, 0),
+		subtrees: make([]*hierNode, 0),
+		index: make(map[string]int),
+		parent: parent,
+	}
+}
+
+func recursiveMessageStatList(cur *hierNode) {
+	if cur.level >= 0 {
+		for i := 0; i < cur.level; i++ {
+			fmt.Printf("  ")
+		}
+
+		fmt.Printf("%s", cur.name)
+		written := 2*cur.level + len(cur.name)
+
+		if len(cur.timers) > 0 {
+			for i := 0; i < 32 - written; i++ {
+				fmt.Printf(" ")
+			}
+			var nano, childNano int64
+			for _, timer := range cur.childTimers {
+				childNano += getTimerNano(timer)
+			}
+			for _, timer := range cur.timers {
+				nano += getTimerNano(timer)
+			}
+			fmt.Printf("%d\t%d", nano, childNano)
+			if *showPercent {
+				fmt.Printf("\t~ %d%%", (100*childNano) / nano)
+			}
+			fmt.Printf("\t @")
+			for i, timer := range cur.timers {
+				fmt.Printf("%s-%s", getTimerTimestamp(timer.Begin), getTimerTimestamp(timer.End))
+				if i < len(cur.timers) - 1 {
+					fmt.Printf(",")
+				}
+			}
+		}
+		fmt.Printf("\n")
+	}
+
+	for _, node := range cur.subtrees {
+		recursiveMessageStatList(node)
+	}
+}
+
 func listMessageStat(stat *profiling.Stat) {
 	if len(stat.Timers) == 0 {
 		return
 	}
 
-	overallNano := getTimerNano(stat.Timers[0])
-
 	fmt.Printf("%v\n", stat.StatTag)
 
-	sort.Slice(stat.Timers, func(i, j int) bool {
-		if stat.Timers[i].TimerTag == "message/overall" {
-			return true
-		} else if stat.Timers[j].TimerTag == "message/overall" {
-			return false
-		}
-		return strings.Compare(stat.Timers[i].TimerTag, stat.Timers[j].TimerTag) < 0
-	})
+	root := newHierNode("", -1, nil)
 
-	var others int64 = 0
 	for i := 0; i < len(stat.Timers); i++ {
-		splitTag := strings.Split(stat.Timers[i].TimerTag, "/")
-		for t := 0; t < len(splitTag); t++ {
-			fmt.Printf("  ")
-		}
+		splitTags := strings.Split(stat.Timers[i].TimerTag, "/")
+		cur := root
+		for level, splitTag := range splitTags {
+			if _, ok := cur.index[splitTag]; !ok {
+				cur.index[splitTag] = len(cur.subtrees)
+				cur.subtrees = append(cur.subtrees, newHierNode(splitTag, level, cur))
+			}
 
-		nano := getTimerNano(stat.Timers[i])
-		others += nano
-		fmt.Printf("%s\t\t%d", splitTag[len(splitTag)-1], nano)
-		if *showPercent {
-			fmt.Printf("\t~ %d%%", (100*nano)/overallNano)
+			if level == len(splitTags) - 1 {
+				cur.subtrees[cur.index[splitTag]].timers = append(cur.subtrees[cur.index[splitTag]].timers, stat.Timers[i])
+			} else {
+				cur.subtrees[cur.index[splitTag]].childTimers = append(cur.subtrees[cur.index[splitTag]].childTimers, stat.Timers[i])
+			}
+
+			cur = cur.subtrees[cur.index[splitTag]]
 		}
-		fmt.Printf("\t@ %s - %s", getTimerTimestamp(stat.Timers[i].Begin), getTimerTimestamp(stat.Timers[i].End))
-		fmt.Printf("\n")
 	}
+
+	recursiveMessageStatList(root)
 	fmt.Printf("\n")
 }
 
 func listAllMessages(stats []*profiling.Stat) {
-	fmt.Printf("legend: O=overall, U=unaccounted, H=headers, T=transport, C=compression, E=encoding\n")
 	sort.Slice(stats, func(i, j int) bool {
 		if len(stats[j].Timers) == 0 {
 			return true
@@ -172,7 +229,9 @@ func listAllMessages(stats []*profiling.Stat) {
 		return stats[i].Timers[0].Begin.Before(stats[j].Timers[0].Begin)
 	})
 	for _, stat := range stats {
-		listMessageStat(stat)
+		if *messageFilter == "" || *messageFilter == stat.StatTag {
+			listMessageStat(stat)
+		}
 	}
 }
 
