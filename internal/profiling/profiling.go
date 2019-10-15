@@ -30,10 +30,18 @@ func newTimer(timerTag string) (*Timer) {
 }
 
 func (t *Timer) Ingress() {
+	if t == nil {
+		return
+	}
+
 	t.Begin = time.Now()
 }
 
 func (t *Timer) Egress() {
+	if t == nil {
+		return
+	}
+
 	t.End = time.Now()
 }
 
@@ -47,8 +55,13 @@ func NewStat(statTag string) *Stat {
 }
 
 func (stat *Stat) NewTimer(timerTag string) *Timer {
+	if (stat == nil) {
+		return nil
+	}
+
 	timer := newTimer(timerTag)
 	stat.Timers = append(stat.Timers, timer)
+	timer.Ingress()
 	return timer
 }
 

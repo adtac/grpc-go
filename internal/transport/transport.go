@@ -38,6 +38,7 @@ import (
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/tap"
+	"google.golang.org/grpc/internal/profiling"
 )
 
 type bufferPool struct {
@@ -691,7 +692,7 @@ type ServerTransport interface {
 
 	// Write sends the data for the given stream.
 	// Write may not be called on all streams.
-	Write(s *Stream, hdr []byte, data []byte, opts *Options) error
+	Write(s *Stream, hdr []byte, data []byte, stat *profiling.Stat, opts *Options) error
 
 	// WriteStatus sends the status of a stream to the client.  WriteStatus is
 	// the final call made on a stream and always occurs.

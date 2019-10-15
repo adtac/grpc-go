@@ -685,7 +685,6 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 		timer := stat.NewTimer("message")
 		defer profiling.MessageStats.Push(stat)
 		defer timer.Egress()
-		timer.Ingress()
 	}
 
 	defer func() {
@@ -740,7 +739,6 @@ func (cs *clientStream) RecvMsg(m interface{}) error {
 		timer := stat.NewTimer("message")
 		defer profiling.MessageStats.Push(stat)
 		defer timer.Egress()
-		timer.Ingress()
 	}
 
 	if cs.binlog != nil && !cs.serverHeaderBinlogged {
@@ -1405,7 +1403,6 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 		overallTimer := stat.NewTimer("message")
 		defer profiling.MessageStats.Push(stat)
 		defer overallTimer.Egress()
-		overallTimer.Ingress()
 	}
 
 	defer func() {
@@ -1437,17 +1434,9 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 	}()
 
 	// load hdr, payload, data
-	var miscTimer *profiling.Timer
-	if stat != nil && false {
-		miscTimer = stat.NewTimer("message/misc")
-		miscTimer.Ingress()
-	}
 	hdr, payload, data, err := prepareMsg(m, ss.codec, ss.cp, ss.comp, stat)
 	if err != nil {
 		return err
-	}
-	if stat != nil && false {
-		miscTimer.Egress()
 	}
 
 	// TODO(dfawley): should we be checking len(data) instead?
@@ -1455,17 +1444,11 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 		return status.Errorf(codes.ResourceExhausted, "trying to send message larger than max (%d vs. %d)", len(payload), ss.maxSendMessageSize)
 	}
 
-	var transportTimer *profiling.Timer
-	if stat != nil {
-		transportTimer = stat.NewTimer("message/transport")
-		transportTimer.Ingress()
-	}
-	if err := ss.t.Write(ss.s, hdr, payload, &transport.Options{Last: false}); err != nil {
+	transportTimer := stat.NewTimer("message/transport/blocking")
+	if err := ss.t.Write(ss.s, hdr, payload, stat, &transport.Options{Last: false}); err != nil {
 		return toRPCErr(err)
 	}
-	if stat != nil {
-		transportTimer.Egress()
-	}
+	transportTimer.Egress()
 
 	if ss.binlog != nil {
 		if !ss.serverHeaderBinlogged {
@@ -1492,7 +1475,6 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 		timer := stat.NewTimer("message")
 		defer profiling.MessageStats.Push(stat)
 		defer timer.Egress()
-		timer.Ingress()
 	}
 
 	defer func() {
@@ -1571,41 +1553,23 @@ func prepareMsg(m interface{}, codec baseCodec, cp Compressor, comp encoding.Com
 	}
 	// The input interface is not a prepared msg.
 	// Marshal and Compress the data at this point
-	var encodingTimer *profiling.Timer
-	if stat != nil {
-		encodingTimer = stat.NewTimer("message/encoding")
-		encodingTimer.Ingress()
-	}
+	encodingTimer := stat.NewTimer("message/encoding")
 	data, err = encode(codec, m)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if stat != nil {
-		encodingTimer.Egress()
-	}
+	encodingTimer.Egress()
 
-	var compressionTimer *profiling.Timer
-	if stat != nil {
-		compressionTimer = stat.NewTimer("message/compression")
-		compressionTimer.Ingress()
-	}
+	compressionTimer := stat.NewTimer("message/compression")
 	compData, err := compress(data, cp, comp)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if stat != nil {
-		compressionTimer.Egress()
-	}
+	compressionTimer.Egress()
 
-	var headerTimer *profiling.Timer
-	if stat != nil {
-		headerTimer = stat.NewTimer("message/header")
-		headerTimer.Ingress()
-	}
+	headerTimer := stat.NewTimer("message/header")
 	hdr, payload = msgHeader(data, compData)
-	if stat != nil {
-		headerTimer.Egress()
-	}
+	headerTimer.Egress()
 
 	return hdr, payload, data, nil
 }

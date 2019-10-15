@@ -845,7 +845,8 @@ func (s *Server) sendResponse(t transport.ServerTransport, stream *transport.Str
 	if len(payload) > s.opts.maxSendMessageSize {
 		return status.Errorf(codes.ResourceExhausted, "grpc: trying to send message larger than max (%d vs. %d)", len(payload), s.opts.maxSendMessageSize)
 	}
-	err = t.Write(stream, hdr, payload, opts)
+	// TODO(adtac): use stat instead of nil
+	err = t.Write(stream, hdr, payload, nil, opts)
 	if err == nil && s.opts.statsHandler != nil {
 		s.opts.statsHandler.HandleRPC(stream.Context(), outPayload(false, msg, data, payload, time.Now()))
 	}

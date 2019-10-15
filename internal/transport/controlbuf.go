@@ -27,6 +27,7 @@ import (
 
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
+	"google.golang.org/grpc/internal/profiling"
 )
 
 var updateHeaderTblSize = func(e *hpack.Encoder, v uint32) {
@@ -136,6 +137,7 @@ type dataFrame struct {
 	// onEachWrite is called every time
 	// a part of d is written out.
 	onEachWrite func()
+	stat *profiling.Stat
 }
 
 func (*dataFrame) isTransportResponseFrame() bool { return false }
@@ -696,6 +698,7 @@ func (l *loopyWriter) writeHeader(streamID uint32, endStream bool, hf []hpack.He
 }
 
 func (l *loopyWriter) preprocessData(df *dataFrame) error {
+	loopyTimer := df.stat.NewTimer("message/transport/loopy")
 	str, ok := l.estdStreams[df.streamID]
 	if !ok {
 		return nil
@@ -707,6 +710,7 @@ func (l *loopyWriter) preprocessData(df *dataFrame) error {
 		str.state = active
 		l.activeStreams.enqueue(str)
 	}
+	loopyTimer.Egress()
 	return nil
 }
 
@@ -836,6 +840,10 @@ func (l *loopyWriter) processData() (bool, error) {
 	// As an optimization to keep wire traffic low, data from d is copied to h to make as big as the
 	// maximum possilbe HTTP2 frame size.
 
+	loopyTimer := dataItem.stat.NewTimer("message/transport/loopy")
+	if loopyTimer != nil {
+		defer loopyTimer.Egress()
+	}
 	if len(dataItem.h) == 0 && len(dataItem.d) == 0 { // Empty data frame
 		// Client sends out empty data frame with endStream = true
 		if err := l.framer.fr.WriteData(dataItem.streamID, dataItem.endStream, nil); err != nil {
