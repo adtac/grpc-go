@@ -108,6 +108,7 @@ type TimerProto struct {
 	BeginNsec            int32    `protobuf:"varint,3,opt,name=beginNsec,proto3" json:"beginNsec,omitempty"`
 	EndSec               int64    `protobuf:"varint,4,opt,name=endSec,proto3" json:"endSec,omitempty"`
 	EndNsec              int32    `protobuf:"varint,5,opt,name=endNsec,proto3" json:"endNsec,omitempty"`
+	GoId                 int64    `protobuf:"varint,6,opt,name=goId,proto3" json:"goId,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
@@ -173,40 +174,48 @@ func (m *TimerProto) GetEndNsec() int32 {
 	return 0
 }
 
-type GetMessageStatsRequest struct {
+func (m *TimerProto) GetGoId() int64 {
+	if m != nil {
+		return m.GoId
+	}
+	return 0
+}
+
+type GetStreamStatsRequest struct {
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *GetMessageStatsRequest) Reset()         { *m = GetMessageStatsRequest{} }
-func (m *GetMessageStatsRequest) String() string { return proto.CompactTextString(m) }
-func (*GetMessageStatsRequest) ProtoMessage()    {}
-func (*GetMessageStatsRequest) Descriptor() ([]byte, []int) {
+func (m *GetStreamStatsRequest) Reset()         { *m = GetStreamStatsRequest{} }
+func (m *GetStreamStatsRequest) String() string { return proto.CompactTextString(m) }
+func (*GetStreamStatsRequest) ProtoMessage()    {}
+func (*GetStreamStatsRequest) Descriptor() ([]byte, []int) {
 	return fileDescriptor_e51e679f9ae460e2, []int{3}
 }
 
-func (m *GetMessageStatsRequest) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_GetMessageStatsRequest.Unmarshal(m, b)
+func (m *GetStreamStatsRequest) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_GetStreamStatsRequest.Unmarshal(m, b)
 }
-func (m *GetMessageStatsRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_GetMessageStatsRequest.Marshal(b, m, deterministic)
+func (m *GetStreamStatsRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_GetStreamStatsRequest.Marshal(b, m, deterministic)
 }
-func (m *GetMessageStatsRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_GetMessageStatsRequest.Merge(m, src)
+func (m *GetStreamStatsRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GetStreamStatsRequest.Merge(m, src)
 }
-func (m *GetMessageStatsRequest) XXX_Size() int {
-	return xxx_messageInfo_GetMessageStatsRequest.Size(m)
+func (m *GetStreamStatsRequest) XXX_Size() int {
+	return xxx_messageInfo_GetStreamStatsRequest.Size(m)
 }
-func (m *GetMessageStatsRequest) XXX_DiscardUnknown() {
-	xxx_messageInfo_GetMessageStatsRequest.DiscardUnknown(m)
+func (m *GetStreamStatsRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_GetStreamStatsRequest.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_GetMessageStatsRequest proto.InternalMessageInfo
+var xxx_messageInfo_GetStreamStatsRequest proto.InternalMessageInfo
 
 type StatProto struct {
 	StatTag              string        `protobuf:"bytes,1,opt,name=statTag,proto3" json:"statTag,omitempty"`
 	TimerProtos          []*TimerProto `protobuf:"bytes,2,rep,name=timerProtos,proto3" json:"timerProtos,omitempty"`
+	Metadata             []byte        `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}      `json:"-"`
 	XXX_unrecognized     []byte        `json:"-"`
 	XXX_sizecache        int32         `json:"-"`
@@ -251,38 +260,47 @@ func (m *StatProto) GetTimerProtos() []*TimerProto {
 	return nil
 }
 
+func (m *StatProto) GetMetadata() []byte {
+	if m != nil {
+		return m.Metadata
+	}
+	return nil
+}
+
 func init() {
 	proto.RegisterType((*SetEnabledRequest)(nil), "SetEnabledRequest")
 	proto.RegisterType((*SetEnabledResponse)(nil), "SetEnabledResponse")
 	proto.RegisterType((*TimerProto)(nil), "TimerProto")
-	proto.RegisterType((*GetMessageStatsRequest)(nil), "GetMessageStatsRequest")
+	proto.RegisterType((*GetStreamStatsRequest)(nil), "GetStreamStatsRequest")
 	proto.RegisterType((*StatProto)(nil), "StatProto")
 }
 
 func init() { proto.RegisterFile("service/service.proto", fileDescriptor_e51e679f9ae460e2) }
 
 var fileDescriptor_e51e679f9ae460e2 = []byte{
-	// 320 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x6c, 0x92, 0xc1, 0x4b, 0xc3, 0x30,
-	0x14, 0xc6, 0xe9, 0xe6, 0xe6, 0xfa, 0x76, 0x10, 0x23, 0xce, 0x32, 0x3c, 0x94, 0x9e, 0x7a, 0x59,
-	0x3a, 0x26, 0x82, 0x67, 0x41, 0x3c, 0x29, 0xa3, 0xdb, 0xc9, 0x5b, 0xd7, 0x3d, 0x43, 0xa1, 0x36,
-	0x35, 0x2f, 0xf3, 0xe4, 0x9f, 0xe1, 0x1f, 0x2c, 0x49, 0x9b, 0x76, 0xe8, 0x4e, 0xed, 0x2f, 0xf9,
-	0x3e, 0xf2, 0x7d, 0x8f, 0x07, 0xd7, 0x84, 0xea, 0xab, 0xc8, 0x31, 0x69, 0xbf, 0xbc, 0x56, 0x52,
-	0xcb, 0x68, 0x01, 0x97, 0x1b, 0xd4, 0x4f, 0x55, 0xb6, 0x2b, 0x71, 0x9f, 0xe2, 0xe7, 0x01, 0x49,
-	0xb3, 0x00, 0xce, 0xb1, 0x39, 0x09, 0xbc, 0xd0, 0x8b, 0x27, 0xa9, 0xc3, 0x88, 0x03, 0x3b, 0x96,
-	0x53, 0x2d, 0x2b, 0x42, 0xa3, 0xa7, 0x43, 0x9e, 0x23, 0x91, 0xd3, 0xb7, 0x18, 0xfd, 0x78, 0x00,
-	0xdb, 0xe2, 0x03, 0xd5, 0xda, 0xbc, 0xc6, 0xe6, 0x30, 0xd1, 0x86, 0xb6, 0x99, 0xb0, 0x4a, 0x3f,
-	0xed, 0xd8, 0xdc, 0xed, 0x50, 0x14, 0xd5, 0x06, 0xf3, 0x60, 0x10, 0x7a, 0xf1, 0x30, 0xed, 0x98,
-	0xdd, 0x82, 0x6f, 0xff, 0x5f, 0x09, 0xf3, 0x60, 0x18, 0x7a, 0xf1, 0x28, 0xed, 0x0f, 0xd8, 0x0c,
-	0xc6, 0x58, 0xed, 0x8d, 0xef, 0xcc, 0xfa, 0x5a, 0x6a, 0x6a, 0xec, 0xad, 0x67, 0x64, 0x3d, 0x0e,
-	0xa3, 0x00, 0x66, 0xcf, 0xa8, 0x5f, 0x90, 0x28, 0x13, 0xb8, 0xd1, 0x99, 0xa6, 0xb6, 0x7a, 0xb4,
-	0x05, 0xdf, 0x70, 0x13, 0xd7, 0xf4, 0xd2, 0x99, 0xee, 0xd3, 0x3a, 0x64, 0x0b, 0x98, 0xea, 0xae,
-	0x16, 0x05, 0x83, 0x70, 0x18, 0x4f, 0x57, 0x53, 0xde, 0x57, 0x4d, 0x8f, 0xef, 0x57, 0xdf, 0xe0,
-	0xaf, 0x95, 0x7c, 0x2f, 0xca, 0xa2, 0x12, 0xec, 0x1e, 0xa0, 0x9f, 0x21, 0x63, 0xfc, 0xdf, 0xfc,
-	0xe7, 0x57, 0xfc, 0xc4, 0x90, 0x1f, 0xe0, 0xe2, 0x4f, 0x66, 0x76, 0xc3, 0x4f, 0xb7, 0x98, 0x03,
-	0xef, 0x4a, 0x2c, 0xbd, 0xc7, 0xe5, 0x1b, 0x17, 0x52, 0x8a, 0x12, 0xb9, 0x90, 0x65, 0x56, 0x09,
-	0x2e, 0x95, 0x48, 0x84, 0xaa, 0xf3, 0xa4, 0x76, 0xa1, 0x12, 0xbb, 0x0d, 0x6e, 0x37, 0x76, 0x63,
-	0x8b, 0x77, 0xbf, 0x01, 0x00, 0x00, 0xff, 0xff, 0x2c, 0xe3, 0x4f, 0xda, 0x35, 0x02, 0x00, 0x00,
+	// 343 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x6c, 0x92, 0xbd, 0x6a, 0xeb, 0x30,
+	0x18, 0x86, 0x71, 0xfe, 0x4e, 0xfc, 0xe5, 0x70, 0xe0, 0xa8, 0x24, 0x35, 0xa1, 0x83, 0xf1, 0xe4,
+	0x25, 0x72, 0x48, 0x69, 0x2f, 0xa0, 0x50, 0x4a, 0x97, 0x12, 0xe4, 0x4c, 0xdd, 0x14, 0xfb, 0xab,
+	0x30, 0x38, 0x96, 0x2b, 0x29, 0x1d, 0x7a, 0x45, 0xbd, 0xcc, 0x22, 0xc5, 0x3f, 0x29, 0xcd, 0x64,
+	0x3d, 0xd2, 0xfb, 0x62, 0x3d, 0x92, 0x60, 0xae, 0x51, 0x7d, 0x14, 0x19, 0x26, 0xcd, 0x97, 0xd6,
+	0x4a, 0x1a, 0x19, 0xad, 0xe0, 0x7f, 0x8a, 0xe6, 0xb1, 0xe2, 0xfb, 0x12, 0x73, 0x86, 0xef, 0x47,
+	0xd4, 0x86, 0x04, 0xf0, 0x07, 0x4f, 0x33, 0x81, 0x17, 0x7a, 0xf1, 0x94, 0xb5, 0x18, 0x51, 0x20,
+	0xe7, 0x71, 0x5d, 0xcb, 0x4a, 0xa3, 0xcd, 0xeb, 0x63, 0x96, 0xa1, 0xd6, 0x6d, 0xbe, 0xc1, 0xe8,
+	0xcb, 0x03, 0xd8, 0x15, 0x07, 0x54, 0x5b, 0xfb, 0x37, 0xb2, 0x84, 0xa9, 0xb1, 0xb4, 0xe3, 0xc2,
+	0x25, 0x7d, 0xd6, 0xb1, 0x5d, 0xdb, 0xa3, 0x28, 0xaa, 0x14, 0xb3, 0x60, 0x10, 0x7a, 0xf1, 0x90,
+	0x75, 0x4c, 0x6e, 0xc0, 0x77, 0xe3, 0x17, 0x8d, 0x59, 0x30, 0x0c, 0xbd, 0x78, 0xcc, 0xfa, 0x09,
+	0xb2, 0x80, 0x09, 0x56, 0xb9, 0xed, 0x8d, 0x5c, 0xaf, 0xa1, 0x93, 0x46, 0xee, 0x3a, 0x63, 0xd7,
+	0x69, 0x91, 0x10, 0x18, 0x09, 0xf9, 0x9c, 0x07, 0x13, 0x97, 0x77, 0xe3, 0xe8, 0x1a, 0xe6, 0x4f,
+	0x68, 0x52, 0xa3, 0x90, 0x1f, 0x52, 0xc3, 0x8d, 0x6e, 0x4e, 0x23, 0xaa, 0xc1, 0xb7, 0x7c, 0x32,
+	0xb0, 0xaa, 0x86, 0x9b, 0x5e, 0xa0, 0x45, 0xb2, 0x82, 0x99, 0xe9, 0x4c, 0x75, 0x30, 0x08, 0x87,
+	0xf1, 0x6c, 0x33, 0xa3, 0xbd, 0x3d, 0x3b, 0x5f, 0xb7, 0xba, 0x07, 0x34, 0x3c, 0xe7, 0x86, 0x3b,
+	0xa3, 0xbf, 0xac, 0xe3, 0xcd, 0x27, 0xf8, 0x5b, 0x25, 0xdf, 0x8a, 0xb2, 0xa8, 0x04, 0xb9, 0x03,
+	0xe8, 0x8f, 0x9c, 0x10, 0xfa, 0xeb, 0xba, 0x96, 0x57, 0xf4, 0xc2, 0x9d, 0xdc, 0xc3, 0xbf, 0x9f,
+	0x3a, 0x64, 0x41, 0x2f, 0xfa, 0x2d, 0x81, 0x76, 0x7a, 0x6b, 0xef, 0x61, 0xfd, 0x4a, 0x85, 0x94,
+	0xa2, 0x44, 0x2a, 0x64, 0xc9, 0x2b, 0x41, 0xa5, 0x12, 0x89, 0x50, 0x75, 0x96, 0xd4, 0xed, 0x96,
+	0x12, 0xf7, 0x74, 0xda, 0x87, 0xb4, 0x9f, 0x38, 0xbc, 0xfd, 0x0e, 0x00, 0x00, 0xff, 0xff, 0xd2,
+	0x16, 0xd9, 0x93, 0x62, 0x02, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -298,7 +316,7 @@ const _ = grpc.SupportPackageIsVersion4
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type ProfilingClient interface {
 	SetEnabled(ctx context.Context, in *SetEnabledRequest, opts ...grpc.CallOption) (*SetEnabledResponse, error)
-	GetMessageStats(ctx context.Context, in *GetMessageStatsRequest, opts ...grpc.CallOption) (Profiling_GetMessageStatsClient, error)
+	GetStreamStats(ctx context.Context, in *GetStreamStatsRequest, opts ...grpc.CallOption) (Profiling_GetStreamStatsClient, error)
 }
 
 type profilingClient struct {
@@ -318,12 +336,12 @@ func (c *profilingClient) SetEnabled(ctx context.Context, in *SetEnabledRequest,
 	return out, nil
 }
 
-func (c *profilingClient) GetMessageStats(ctx context.Context, in *GetMessageStatsRequest, opts ...grpc.CallOption) (Profiling_GetMessageStatsClient, error) {
-	stream, err := c.cc.NewStream(ctx, &_Profiling_serviceDesc.Streams[0], "/Profiling/GetMessageStats", opts...)
+func (c *profilingClient) GetStreamStats(ctx context.Context, in *GetStreamStatsRequest, opts ...grpc.CallOption) (Profiling_GetStreamStatsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_Profiling_serviceDesc.Streams[0], "/Profiling/GetStreamStats", opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &profilingGetMessageStatsClient{stream}
+	x := &profilingGetStreamStatsClient{stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -333,16 +351,16 @@ func (c *profilingClient) GetMessageStats(ctx context.Context, in *GetMessageSta
 	return x, nil
 }
 
-type Profiling_GetMessageStatsClient interface {
+type Profiling_GetStreamStatsClient interface {
 	Recv() (*StatProto, error)
 	grpc.ClientStream
 }
 
-type profilingGetMessageStatsClient struct {
+type profilingGetStreamStatsClient struct {
 	grpc.ClientStream
 }
 
-func (x *profilingGetMessageStatsClient) Recv() (*StatProto, error) {
+func (x *profilingGetStreamStatsClient) Recv() (*StatProto, error) {
 	m := new(StatProto)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
@@ -353,7 +371,7 @@ func (x *profilingGetMessageStatsClient) Recv() (*StatProto, error) {
 // ProfilingServer is the server API for Profiling service.
 type ProfilingServer interface {
 	SetEnabled(context.Context, *SetEnabledRequest) (*SetEnabledResponse, error)
-	GetMessageStats(*GetMessageStatsRequest, Profiling_GetMessageStatsServer) error
+	GetStreamStats(*GetStreamStatsRequest, Profiling_GetStreamStatsServer) error
 }
 
 // UnimplementedProfilingServer can be embedded to have forward compatible implementations.
@@ -363,8 +381,8 @@ type UnimplementedProfilingServer struct {
 func (*UnimplementedProfilingServer) SetEnabled(ctx context.Context, req *SetEnabledRequest) (*SetEnabledResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetEnabled not implemented")
 }
-func (*UnimplementedProfilingServer) GetMessageStats(req *GetMessageStatsRequest, srv Profiling_GetMessageStatsServer) error {
-	return status.Errorf(codes.Unimplemented, "method GetMessageStats not implemented")
+func (*UnimplementedProfilingServer) GetStreamStats(req *GetStreamStatsRequest, srv Profiling_GetStreamStatsServer) error {
+	return status.Errorf(codes.Unimplemented, "method GetStreamStats not implemented")
 }
 
 func RegisterProfilingServer(s *grpc.Server, srv ProfilingServer) {
@@ -389,24 +407,24 @@ func _Profiling_SetEnabled_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Profiling_GetMessageStats_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(GetMessageStatsRequest)
+func _Profiling_GetStreamStats_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(GetStreamStatsRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(ProfilingServer).GetMessageStats(m, &profilingGetMessageStatsServer{stream})
+	return srv.(ProfilingServer).GetStreamStats(m, &profilingGetStreamStatsServer{stream})
 }
 
-type Profiling_GetMessageStatsServer interface {
+type Profiling_GetStreamStatsServer interface {
 	Send(*StatProto) error
 	grpc.ServerStream
 }
 
-type profilingGetMessageStatsServer struct {
+type profilingGetStreamStatsServer struct {
 	grpc.ServerStream
 }
 
-func (x *profilingGetMessageStatsServer) Send(m *StatProto) error {
+func (x *profilingGetStreamStatsServer) Send(m *StatProto) error {
 	return x.ServerStream.SendMsg(m)
 }
 
@@ -421,8 +439,8 @@ var _Profiling_serviceDesc = grpc.ServiceDesc{
 	},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "GetMessageStats",
-			Handler:       _Profiling_GetMessageStats_Handler,
+			StreamName:    "GetStreamStats",
+			Handler:       _Profiling_GetStreamStats_Handler,
 			ServerStreams: true,
 		},
 	},

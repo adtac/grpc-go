@@ -3,6 +3,7 @@ package profiling
 import (
 	"sync/atomic"
 	"time"
+	"runtime"
 )
 
 var profilingEnabled uint32
@@ -23,10 +24,13 @@ type Timer struct {
 	TimerTag string
 	Begin time.Time
 	End time.Time
+	GoId int64
 }
 
-func newTimer(timerTag string) (*Timer) {
-	return &Timer{TimerTag: timerTag}
+func NewTimer(timerTag string) *Timer {
+	timer := &Timer{TimerTag: timerTag, GoId: runtime.GoId()}
+	timer.Ingress()
+	return timer
 }
 
 func (t *Timer) Ingress() {
@@ -48,6 +52,7 @@ func (t *Timer) Egress() {
 type Stat struct {
 	StatTag string
 	Timers []*Timer
+	Metadata []byte
 }
 
 func NewStat(statTag string) *Stat {
@@ -59,19 +64,28 @@ func (stat *Stat) NewTimer(timerTag string) *Timer {
 		return nil
 	}
 
-	timer := newTimer(timerTag)
+	timer := NewTimer(timerTag)
 	stat.Timers = append(stat.Timers, timer)
-	timer.Ingress()
 	return timer
 }
 
-var MessageStats *CircularBuffer
+func (stat *Stat) AppendTimer(timer *Timer) {
+	if (stat == nil) {
+		return
+	}
+
+	stat.Timers = append(stat.Timers, timer)
+}
+
+var StreamStats *CircularBuffer
 
 func InitStats(bufsize uint32) (err error) {
-	MessageStats, err = NewCircularBuffer(bufsize)
+	StreamStats, err = NewCircularBuffer(bufsize)
 	if err != nil {
 		return
 	}
 
 	return
 }
+
+var IdCounter uint64

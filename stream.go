@@ -679,13 +679,8 @@ func (cs *clientStream) bufferForRetryLocked(sz int, op func(a *csAttempt) error
 }
 
 func (cs *clientStream) SendMsg(m interface{}) (err error) {
-	var stat *profiling.Stat
-	if profiling.IsEnabled() {
-		stat = profiling.NewStat("client/stream/message/send")
-		timer := stat.NewTimer("message")
-		defer profiling.MessageStats.Push(stat)
-		defer timer.Egress()
-	}
+	timer := cs.attempt.s.Stat().NewTimer("/send")
+	defer timer.Egress()
 
 	defer func() {
 		if err != nil && err != io.EOF {
@@ -705,7 +700,7 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 	}
 
 	// load hdr, payload, data
-	hdr, payload, data, err := prepareMsg(m, cs.codec, cs.cp, cs.comp, stat)
+	hdr, payload, data, err := prepareMsg(m, cs.codec, cs.cp, cs.comp, cs.attempt.s.Stat())
 	if err != nil {
 		return err
 	}
@@ -733,13 +728,8 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 }
 
 func (cs *clientStream) RecvMsg(m interface{}) error {
-	var stat *profiling.Stat
-	if profiling.IsEnabled() {
-		stat = profiling.NewStat("client/stream/message/recv")
-		timer := stat.NewTimer("message")
-		defer profiling.MessageStats.Push(stat)
-		defer timer.Egress()
-	}
+	timer := cs.attempt.s.Stat().NewTimer("/recv")
+	defer timer.Egress()
 
 	if cs.binlog != nil && !cs.serverHeaderBinlogged {
 		// Call Header() to binary log header if it's not already logged.
@@ -788,7 +778,7 @@ func (cs *clientStream) CloseSend() error {
 	}
 	cs.sentLast = true
 	op := func(a *csAttempt) error {
-		a.t.Write(a.s, nil, nil, &transport.Options{Last: true})
+		a.t.Write(a.s, nil, nil, a.s.Stat(), &transport.Options{Last: true})
 		// Always return nil; io.EOF is the only error that might make sense
 		// instead, but there is no need to signal the client to call RecvMsg
 		// as the only use left for the stream after CloseSend is to call
@@ -859,15 +849,19 @@ func (a *csAttempt) sendMsg(m interface{}, hdr, payld, data []byte) error {
 		}
 		a.mu.Unlock()
 	}
-	if err := a.t.Write(a.s, hdr, payld, &transport.Options{Last: !cs.desc.ClientStreams}); err != nil {
+	timer := a.s.Stat().NewTimer("/transport/enqueue")
+	if err := a.t.Write(a.s, hdr, payld, a.s.Stat(), &transport.Options{Last: !cs.desc.ClientStreams}); err != nil {
 		if !cs.desc.ClientStreams {
 			// For non-client-streaming RPCs, we return nil instead of EOF on error
 			// because the generated code requires it.  finish is not called; RecvMsg()
 			// will call it with the stream's status independently.
+			timer.Egress()
 			return nil
 		}
+		timer.Egress()
 		return io.EOF
 	}
+	timer.Egress()
 	if a.statsHandler != nil {
 		a.statsHandler.HandleRPC(cs.ctx, outPayload(true, m, data, payld, time.Now()))
 	}
@@ -885,6 +879,7 @@ func (a *csAttempt) recvMsg(m interface{}, payInfo *payloadInfo) (err error) {
 
 	if !a.decompSet {
 		// Block until we receive headers containing received message encoding.
+		timer := a.s.Stat().NewTimer("/recv/header")
 		if ct := a.s.RecvCompress(); ct != "" && ct != encoding.Identity {
 			if a.dc == nil || a.dc.Type() != ct {
 				// No configured decompressor, or it does not match the incoming
@@ -898,8 +893,9 @@ func (a *csAttempt) recvMsg(m interface{}, payInfo *payloadInfo) (err error) {
 		}
 		// Only initialize this state once per stream.
 		a.decompSet = true
+		timer.Egress()
 	}
-	err = recv(a.p, cs.codec, a.s, a.dc, m, *cs.callInfo.maxReceiveMessageSize, payInfo, a.decomp)
+	err = recv(a.p, cs.codec, a.s, a.dc, m, *cs.callInfo.maxReceiveMessageSize, payInfo, a.decomp, a.s.Stat())
 	if err != nil {
 		if err == io.EOF {
 			if statusErr := a.s.Status().Err(); statusErr != nil {
@@ -936,7 +932,8 @@ func (a *csAttempt) recvMsg(m interface{}, payInfo *payloadInfo) (err error) {
 	}
 	// Special handling for non-server-stream rpcs.
 	// This recv expects EOF or errors, so we don't collect inPayload.
-	err = recv(a.p, cs.codec, a.s, a.dc, m, *cs.callInfo.maxReceiveMessageSize, nil, a.decomp)
+	// TODO(adtac): use a real stat instead of nil
+	err = recv(a.p, cs.codec, a.s, a.dc, m, *cs.callInfo.maxReceiveMessageSize, nil, a.decomp, nil)
 	if err == nil {
 		return toRPCErr(errors.New("grpc: client streaming protocol violation: get <nil>, want <EOF>"))
 	}
@@ -1152,7 +1149,7 @@ func (as *addrConnStream) CloseSend() error {
 	}
 	as.sentLast = true
 
-	as.t.Write(as.s, nil, nil, &transport.Options{Last: true})
+	as.t.Write(as.s, nil, nil, as.s.Stat(), &transport.Options{Last: true})
 	// Always return nil; io.EOF is the only error that might make sense
 	// instead, but there is no need to signal the client to call RecvMsg
 	// as the only use left for the stream after CloseSend is to call
@@ -1193,7 +1190,7 @@ func (as *addrConnStream) SendMsg(m interface{}) (err error) {
 		return status.Errorf(codes.ResourceExhausted, "trying to send message larger than max (%d vs. %d)", len(payld), *as.callInfo.maxSendMessageSize)
 	}
 
-	if err := as.t.Write(as.s, hdr, payld, &transport.Options{Last: !as.desc.ClientStreams}); err != nil {
+	if err := as.t.Write(as.s, hdr, payld, as.s.Stat(), &transport.Options{Last: !as.desc.ClientStreams}); err != nil {
 		if !as.desc.ClientStreams {
 			// For non-client-streaming RPCs, we return nil instead of EOF on error
 			// because the generated code requires it.  finish is not called; RecvMsg()
@@ -1233,7 +1230,8 @@ func (as *addrConnStream) RecvMsg(m interface{}) (err error) {
 		// Only initialize this state once per stream.
 		as.decompSet = true
 	}
-	err = recv(as.p, as.codec, as.s, as.dc, m, *as.callInfo.maxReceiveMessageSize, nil, as.decomp)
+	// TODO(adtac): use a real stat instead of nil
+	err = recv(as.p, as.codec, as.s, as.dc, m, *as.callInfo.maxReceiveMessageSize, nil, as.decomp, nil)
 	if err != nil {
 		if err == io.EOF {
 			if statusErr := as.s.Status().Err(); statusErr != nil {
@@ -1254,7 +1252,8 @@ func (as *addrConnStream) RecvMsg(m interface{}) (err error) {
 
 	// Special handling for non-server-stream rpcs.
 	// This recv expects EOF or errors, so we don't collect inPayload.
-	err = recv(as.p, as.codec, as.s, as.dc, m, *as.callInfo.maxReceiveMessageSize, nil, as.decomp)
+	// TODO(adtac): use a real stat instead of nil
+	err = recv(as.p, as.codec, as.s, as.dc, m, *as.callInfo.maxReceiveMessageSize, nil, as.decomp, nil)
 	if err == nil {
 		return toRPCErr(errors.New("grpc: client streaming protocol violation: get <nil>, want <EOF>"))
 	}
@@ -1397,13 +1396,8 @@ func (ss *serverStream) SetTrailer(md metadata.MD) {
 }
 
 func (ss *serverStream) SendMsg(m interface{}) (err error) {
-	var stat *profiling.Stat
-	if profiling.IsEnabled() {
-		stat = profiling.NewStat("server/stream/message/send")
-		overallTimer := stat.NewTimer("message")
-		defer profiling.MessageStats.Push(stat)
-		defer overallTimer.Egress()
-	}
+	timer := ss.s.Stat().NewTimer("/send")
+	defer timer.Egress()
 
 	defer func() {
 		if ss.trInfo != nil {
@@ -1434,7 +1428,7 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 	}()
 
 	// load hdr, payload, data
-	hdr, payload, data, err := prepareMsg(m, ss.codec, ss.cp, ss.comp, stat)
+	hdr, payload, data, err := prepareMsg(m, ss.codec, ss.cp, ss.comp, ss.s.Stat())
 	if err != nil {
 		return err
 	}
@@ -1444,11 +1438,11 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 		return status.Errorf(codes.ResourceExhausted, "trying to send message larger than max (%d vs. %d)", len(payload), ss.maxSendMessageSize)
 	}
 
-	transportTimer := stat.NewTimer("message/transport/blocking")
-	if err := ss.t.Write(ss.s, hdr, payload, stat, &transport.Options{Last: false}); err != nil {
+	timer = ss.s.Stat().NewTimer("/transport/enqueue")
+	if err := ss.t.Write(ss.s, hdr, payload, ss.s.Stat(), &transport.Options{Last: false}); err != nil {
 		return toRPCErr(err)
 	}
-	transportTimer.Egress()
+	timer.Egress()
 
 	if ss.binlog != nil {
 		if !ss.serverHeaderBinlogged {
@@ -1469,13 +1463,8 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 }
 
 func (ss *serverStream) RecvMsg(m interface{}) (err error) {
-	var stat *profiling.Stat
-	if profiling.IsEnabled() {
-		stat = profiling.NewStat("server/stream/message/recv")
-		timer := stat.NewTimer("message")
-		defer profiling.MessageStats.Push(stat)
-		defer timer.Egress()
-	}
+	timer := ss.s.Stat().NewTimer("/recv")
+	defer timer.Egress()
 
 	defer func() {
 		if ss.trInfo != nil {
@@ -1508,7 +1497,7 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 	if ss.statsHandler != nil || ss.binlog != nil {
 		payInfo = &payloadInfo{}
 	}
-	if err := recv(ss.p, ss.codec, ss.s, ss.dc, m, ss.maxReceiveMessageSize, payInfo, ss.decomp); err != nil {
+	if err := recv(ss.p, ss.codec, ss.s, ss.dc, m, ss.maxReceiveMessageSize, payInfo, ss.decomp, ss.s.Stat()); err != nil {
 		if err == io.EOF {
 			if ss.binlog != nil {
 				ss.binlog.Log(&binarylog.ClientHalfClose{})
@@ -1553,21 +1542,21 @@ func prepareMsg(m interface{}, codec baseCodec, cp Compressor, comp encoding.Com
 	}
 	// The input interface is not a prepared msg.
 	// Marshal and Compress the data at this point
-	encodingTimer := stat.NewTimer("message/encoding")
-	data, err = encode(codec, m)
+	encodingTimer := stat.NewTimer("/encoding")
+	data, err = encode(codec, m, stat)
+	encodingTimer.Egress()
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	encodingTimer.Egress()
 
-	compressionTimer := stat.NewTimer("message/compression")
-	compData, err := compress(data, cp, comp)
+	compressionTimer := stat.NewTimer("/compression")
+	compData, err := compress(data, cp, comp, stat)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	compressionTimer.Egress()
 
-	headerTimer := stat.NewTimer("message/header")
+	headerTimer := stat.NewTimer("/header")
 	hdr, payload = msgHeader(data, compData)
 	headerTimer.Egress()
 

@@ -46,10 +46,10 @@ func (s *profilingServer) SetEnabled(ctx context.Context, req *pspb.SetEnabledRe
 	return
 }
 
-func (s *profilingServer) GetMessageStats(req *pspb.GetMessageStatsRequest, stream pspb.Profiling_GetMessageStatsServer) (err error) {
-	grpclog.Infof("processing stream request for message stats")
-	results := profiling.MessageStats.Drain()
-	grpclog.Infof("message stats size: %v records", len(results))
+func (s *profilingServer) GetStreamStats(req *pspb.GetStreamStatsRequest, stream pspb.Profiling_GetStreamStatsServer) (err error) {
+	grpclog.Infof("processing stream request for stream stats")
+	results := profiling.StreamStats.Drain()
+	grpclog.Infof("stream stats size: %v records", len(results))
 
 	enabled := profiling.IsEnabled()
 	if enabled {

@@ -363,6 +363,7 @@ func (ht *serverHandlerTransport) HandleStreams(startStream func(*Stream), trace
 		for buf := make([]byte, readSize); ; {
 			n, err := req.Body.Read(buf)
 			if n > 0 {
+				// TODO(adtac): what should recvMsg.timer be here?
 				s.buf.put(recvMsg{buffer: bytes.NewBuffer(buf[:n:n])})
 				buf = buf[n:]
 			}

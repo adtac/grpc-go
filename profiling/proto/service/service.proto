@@ -16,17 +16,19 @@ message TimerProto {
 	int32 beginNsec = 3;
 	int64 endSec = 4;
 	int32 endNsec = 5;
+	int64 goId = 6;
 }
 
-message GetMessageStatsRequest {
+message GetStreamStatsRequest {
 }
 
 message StatProto {
 	string statTag = 1;
 	repeated TimerProto timerProtos = 2;
+	bytes metadata = 3;
 }
 
 service Profiling {
 	rpc SetEnabled (SetEnabledRequest) returns (SetEnabledResponse);
-	rpc GetMessageStats (GetMessageStatsRequest) returns (stream StatProto);
+	rpc GetStreamStats (GetStreamStatsRequest) returns (stream StatProto);
 }
